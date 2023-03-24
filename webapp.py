@@ -38,45 +38,9 @@ def get_index():
     return app.send_static_file("index.html")
 
 
-@app.route("/graph")
-def get_graph():
-    def work(tx, limit):
-        return list(
-            tx.run(
-                "MATCH (n:NDC)-[:aka]-(v)-[:has_ingredient]-(i:IN) "
-                "WHERE n.brand IS NOT NULL and i.brand IS NOT NULL "
-                "RETURN n.brand as brand, collect(i.brand) as ingredients "
-                "LIMIT $limit ",
-                {"limit": limit},
-            )
-        )
-
-    db = get_db()
-    results = db.execute_read(work, request.args.get("limit", 100))
-    nodes = []
-    rels = []
-    i = 0
-    for record in results:
-        nodes.append({"name": record["brand"], "label": "NDC"})
-        target = i
-        i += 1
-        for name in record["ingredients"]:
-            ingredient = {"name": name, "label": "IN"}
-            try:
-                source = nodes.index(ingredient)
-            except ValueError:
-                nodes.append(ingredient)
-                source = i
-                i += 1
-            rels.append({"source": source, "target": target})
-    return Response(dumps({"nodes": nodes, "links": rels}), mimetype="application/json")
-
-
 @app.route("/search")
 def get_search():
     def work(tx, q_):
-        print("searching...")
-        print(q_)
         return list(
             tx.run(
                 "MATCH (n:NDC)-[:aka]-(i) "
@@ -84,7 +48,7 @@ def get_search():
                 " AND n.brand IS NOT NULL "
                 " AND i.brand IS NOT NULL "
                 "RETURN n.ndc as ndc, n.brand as brand "
-                "LIMIT 5",
+                "LIMIT 7",
                 {"ndc1": q_},
             )
         )
@@ -108,26 +72,54 @@ def get_ingredients(ndc):
     def work(tx, ndc_):
         return list(
             tx.run(
-                "MATCH (n:NDC {ndc:$ndc})-[*1..3]-(i:IN)"
+                "MATCH (n:NDC {ndc:$ndc})-[*1..4]-(i:IN)"
                 "WHERE i.brand IS NOT NULL "
-                "RETURN COLLECT(i.brand) as ingredients",
+                "RETURN COLLECT(DISTINCT i.brand) as ingredients",
                 {"ndc": ndc_},
             )
         )
 
     db = get_db()
     results = db.execute_read(work, ndc)
-    dedupe_results = []
-    [
-        dedupe_results.append(result)
-        for result in results
-        if result not in dedupe_results
-    ]
 
     return Response(
         dumps({"ingredients": results}),
         mimetype="application/json",
     )
+
+
+@app.route("/graph")
+def get_graph():
+    def work(tx, limit):
+        return list(
+            tx.run(
+                "MATCH (n:NDC)-[:aka]-(v)-[:has_ingredient]-(i:IN) "
+                "WHERE n.brand IS NOT NULL and i.brand IS NOT NULL "
+                "RETURN n.ndc as ndc, n.brand as brand, collect(i.brand) as ingredients "
+                "LIMIT $limit ",
+                {"limit": limit},
+            )
+        )
+
+    db = get_db()
+    results = db.execute_read(work, request.args.get("limit", 100))
+    nodes = []
+    rels = []
+    i = 0
+    for record in results:
+        nodes.append({"ndc": record["ndc"], "name": record["brand"], "label": "NDC"})
+        target = i
+        i += 1
+        for name in record["ingredients"]:
+            ingredient = {"name": name, "label": "IN"}
+            try:
+                source = nodes.index(ingredient)
+            except ValueError:
+                nodes.append(ingredient)
+                source = i
+                i += 1
+            rels.append({"source": source, "target": target})
+    return Response(dumps({"nodes": nodes, "links": rels}), mimetype="application/json")
 
 
 # https://github.com/neo4j-examples/movies-python-bolt/blob/main/movies_async.py

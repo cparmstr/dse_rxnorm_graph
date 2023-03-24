@@ -81,7 +81,6 @@ https://github.com/neo4j-examples/movies-python-bolt
         function showIngredient(ndc) {
             $.get("/ingredients/" + encodeURIComponent(ndc),
                     function (data) {
-                        console.log(data['ingredients'][0])
                         if (!data) return;
                         $("#ingredients").text(data.ingredients);
                         const $list = $("#ingredients").empty();
@@ -91,8 +90,11 @@ https://github.com/neo4j-examples/movies-python-bolt
                     }, "json");
             return false;
         }
-        function search(showFirst = true) {
+        function search(showFirst = true, search_ndc="") {
             const query=$("#search").find("input[name=search]").val();
+            if (search_ndc !== "") {
+                const query=search_ndc;
+            }
             $.get("/search?q=" + encodeURIComponent(query),
                     function (data) {
                         const t = $("table#results tbody").empty();
@@ -101,7 +103,7 @@ https://github.com/neo4j-examples/movies-python-bolt
                             $("<tr><td class='ndc'>" + ndc[0]
                                 + "</td><td>" + ndc[1]
                                 + "</td></tr>").appendTo(t)
-                                    .click(function() { showMovie($(this).find("td.ndc").text());})
+                                    .click(function() { showIngredient($(this).find("td.ndc").text());})
                         });
                         if (showFirst) {
                             showIngredient(data.ndc[0][0]);
@@ -139,13 +141,37 @@ https://github.com/neo4j-examples/movies-python-bolt
                 .append("circle")
                 .attr("class", function (d) { return "node "+d.label })
                 .attr("r", 10)
+                .on("click", 
+                    function (d) {
+                        if (!d.ndc) return false;
+                        $.get("/ingredients/" + d.ndc,
+                                function (data) {
+                                    if (!data) return;
+                                    $("#ingredients").text(data.ingredients);
+                                    const $list = $("#ingredients").empty();
+                                    data.ingredients.forEach(function (ingredient) {
+                                        $list.append($("<li>" + ingredient + "</li>"));
+                                    });
+                                }, "json");
+                        $.get("/search?q=" + d.ndc,
+                                function (data) {
+                                    const t = $("table#results tbody").empty();
+                                    if (!data.ndc || data.ndc.length == 0) return;
+                                    data.ndc.forEach(function (ndc, index) {
+                                        $("<tr><td class='ndc'>" + ndc[0]
+                                            + "</td><td>" + ndc[1]
+                                            + "</td></tr>").appendTo(t)
+                                    });
+                                }, "json");
+                        return false;
+                    })
                 .call(force.drag);
 
-        // html title attribute
         node.append("name")
                 .text(function (d) { return d.brand; })
+        node.append("ndc")
+                .text(function (d) { return d.ndc; })
 
-        // force feed algo ticks
         force.on("tick", function() {
             link.attr("x1", function(d) { return d.source.x; })
                     .attr("y1", function(d) { return d.source.y; })

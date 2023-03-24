@@ -1,0 +1,50 @@
+
+[project]
+name = "DSE 241 - Final Project"
+version = "0.0.1"
+description = "Read RxNorm RRF files into Neo4J"
+authors = [
+    {name = "Chris Armstrong", email = "cparmstr@ucsd.edu"},
+]
+dependencies = [
+    "pandas>=1.5.2",
+    "neo4j>=5.3.0",
+    "networkx>=2.8.8",
+    "pytest-coverage>=0.0",
+    "pyarrow>=11.0.0",
+    "flask>=2.2.3",
+]
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[project.urls]
+
+
+# Skip test for assert calls https://bandit.readthedocs.io/en/latest/plugins/index.html
+[tool.pdm]
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=7.2.0",
+    "black>=22.12.0",
+    "mypy>=0.991",
+    "hypothesis>=6.24.3",
+    "pre-commit>=2.15.0",
+    "toml>=0.10.2",
+    "flake8>=6.0.0",
+    "pynvim>=0.4.3",
+    "ropevim>=0.8.1",
+    "sourcery-cli>=0.12.9",
+    "pbr>=5.10.0",
+    "GitPython>=3.1.27",
+    "bandit>=1.7.4",
+    "isort>=5.11.4",
+    "pytest-coverage>=0.0",
+]
+
+[tool.pdm.build]
+includes = []
+
+[build-system]
+requires = ["pdm-pep517>=1.0.0"]
+build-backend = "pdm.pep517.api"
+

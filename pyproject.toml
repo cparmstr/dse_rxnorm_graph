@@ -15,7 +15,7 @@ dependencies = [
     "flask>=2.2.3",
 ]
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "AGPLv1"}
 
 [project.urls]
 

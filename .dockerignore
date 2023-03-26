@@ -1,0 +1,9 @@
+.*
+*.rrf
+*.csv
+*.dat
+*.cfg
+*.log
+.env
+**/__pycache__
+**/__pypackages__

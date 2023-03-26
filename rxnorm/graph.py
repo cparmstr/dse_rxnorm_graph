@@ -106,6 +106,7 @@ class NeoRRF:
 def save_node_csv_file(
     df: pd.DataFrame,
     filename: Path,
+    basedir: Optional[Path] = Path("./import"),
     id_col: Optional[str] = None,
     node_label: Optional[str] = None,
     compress=False,
@@ -115,6 +116,9 @@ def save_node_csv_file(
     """
     save_df = df.copy()
     filename = Path(filename)
+    if basedir:
+        basedir.mkdir(parents=True, exist_ok=True)
+        filename = Path(basedir) / filename
     label_str = ":LABEL"
 
     if id_col and id_col in save_df.columns:
@@ -161,6 +165,7 @@ def save_node_csv_file(
 def save_relationship_csv_file(
     df: pd.DataFrame,
     filename: Path,
+    basedir: Optional[Path] = Path("./import"),
     start_col: Optional[str] = None,
     start_label: Optional[str] = "RXCUI",
     end_col: Optional[str] = None,
@@ -172,6 +177,10 @@ def save_relationship_csv_file(
     Helps to make sure names and column usage are standardized to fit the Neo4j CSV format guidance.
     """
     save_df = df.copy()
+    filename = Path(filename)
+    if basedir:
+        filename = Path(basedir) / filename
+
     start_id = ":START_ID"
     end_id = ":END_ID"
     type_str = ":TYPE"

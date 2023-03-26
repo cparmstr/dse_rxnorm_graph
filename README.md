@@ -26,22 +26,14 @@ This package requiers Docker. The set of scripts and webapp are in the order tha
 `pip install -r requirements.txt`
 3. Run the "generate_neo4j_data.py" script
 `python3 generate_neo4j_data.py`
-Note: This uses up to 40GB of RAM (Would use more, but currently dropping data that 
-4. Start the neo4j docker container
-```
-docker run \
---publish=127.0.0.1:7474:7474 \
---publish=127.0.0.1:7687:7687 \
---user="$(id -u):$(id -g)" \
---volume=$HOME/neo4j/rxnorm/data:/data \
---volume=$HOME/neo4j/import:/var/lib/neo4j/import \
---env NEO4J_server_default__listen__address=0.0.0.0 \
--d neo4j
-```
-5. Run the data fill db script (THIS WILL DELETE ALL CURRENT DATA IN '$HOME/neo4j/rxnorm/data')
+Note: This uses a lot of RAM
+4. Run the data fill db script (THIS WILL DELETE ALL CURRENT DATA IN '$HOME/neo4j/rxnorm/data')
 `bash fill_db.sh`
-6. Start the webapp
+5. Browse to the Neo4J server site and set a new password: [Neo4j Localhost](http://localhost:7474)
+6. Set an environment variable so the webapp can use your new DB password.
+`export NEO4J_PASSWORD='<password_goes_here>'`
+7. Start the webapp
 `python3 webapp.py`
-7. Browse to the localhost web page
-[RxNorm WebApp](https://localhost:8088)
+8. Browse to the localhost web page [RxNorm WebApp](http://localhost:8088)
+9. Search for an NDC or click a node in the graph to see it's ingredients
 

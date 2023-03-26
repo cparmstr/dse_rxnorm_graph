@@ -123,7 +123,6 @@ def create_ndc_nodes_and_relationships(sat: pd.DataFrame) -> List[Path]:
     rxcui = "rxcui"
     rxaui = "rxaui"
     col_check_list = [ndc, rxcui, rxaui]
-    breakpoint()
 
     ndc_data = (
         sat[(sat["atn"] == "NDC") & (sat["suppress"] == "N") & (sat["sab"] == "RXNORM")]
@@ -346,7 +345,7 @@ def main(
             start_col="rxcui2",
             end_col="rxcui1",
         )
-    breakpoint()
+    logger.info("Finished transforming the RxNorm data for Neo4j.")
 
 
 def group_nodes_by_tty(node_df, tty_type, semantic_type, group):

@@ -1,29 +1,28 @@
 #!/bin/bash
 # Script erases the entire DB!!!
-
 set -e
 
 container=$(docker ps --format json | jq -r '{id: .ID, img: .Image} | select(.img == "neo4j") | .id')
 if [[ ! -z $container ]]; then
+  echo "Stopping Neo4j..."
   docker stop $container 
 fi
-sudo rm  -rf $HOME/neo4j/rxnorm/data/databases/*
-sudo rm  -rf $HOME/neo4j/rxnorm/data/transactions/*
+
+sudo rm -rf $HOME/neo4j/rxnorm/data/databases/*
+sudo rm -rf $HOME/neo4j/rxnorm/data/transactions/*
+echo "Removed old databases"
 
 sudo rm -rf $HOME/neo4j/import/*
 cp *.csv* $HOME/neo4j/import/
+echo "Copied files for import into Neo4j"
 
-new_container=$(docker run \
---publish=127.0.0.1:7474:7474 \
---publish=127.0.0.1:7687:7687 \
+sleep 1
+
+docker run -it \
 --user="$(id -u):$(id -g)" \
 --volume=$HOME/neo4j/rxnorm/data:/data \
 --volume=$HOME/neo4j/import:/var/lib/neo4j/import \
---env NEO4J_server_default__listen__address=0.0.0.0 \
--d neo4j)
-
-docker exec -it $new_container \
-bash -c 'neo4j-admin database import full \
+neo4j bash -c 'neo4j-admin database import full \
 --nodes=import/ndc_nodes.csv \
 --nodes=import/rxcui_BN_nodes.csv \
 --nodes=import/rxcui_IN_nodes.csv \
@@ -42,31 +41,29 @@ bash -c 'neo4j-admin database import full \
 --relationships=import/rel_has_ingredient.csv \
 --relationships=import/rel_has_tradename.csv \
 --skip-bad-relationships=true \
---overwrite-destination \
-neo4j'
+--overwrite-destination'
 
 echo "Import Completed"
-sleep 3
-docker stop $new_container
+sleep 4
 
-final_container=$(docker run \
+docker run \
 --publish=127.0.0.1:7474:7474 \
 --publish=127.0.0.1:7687:7687 \
 --user="$(id -u):$(id -g)" \
 --volume=$HOME/neo4j/rxnorm/data:/data \
 --volume=$HOME/neo4j/import:/var/lib/neo4j/import \
 --env NEO4J_server_default__listen__address=0.0.0.0 \
---env NEO4JLABS_PLUGINS='["graph-data-science"]' \
--d neo4j)
+-d neo4j
+# --env NEO4JLABS_PLUGINS='["graph-data-science"]' \
 
 sleep 3
 echo "Ready!"
-sleep 3
+sleep 2
 echo "Set!"
-sleep 3
+sleep 1
 echo "DSE241!"
 echo "Log in to Neo4j here http://localhost:7474/browser"
-echo "username and password: 'neo4j'"
+echo "Username and password are both: 'neo4j'"
 
 # Got TLS? 
 # final_container=$(docker run \

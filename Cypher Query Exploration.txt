@@ -1,0 +1,13 @@
+Cypher Query Exploration:
+MATCH (n:NDC)-[:aka]-(v)-[:has_ingredient]-(i:IN)-[:has_tradename]-(t) RETURN n,v,i,t
+
+# Focus on Drugs related to a particular NDC
+MATCH (n:NDC {ndc:'62484002001'})-[:aka]-(v)-[:has_ingredient]-(i:IN)-[:has_tradename]-(t) RETURN n,v,i,t
+
+# Ingredient search (RUNNING 1..5 never completed)
+MATCH path=((n:NDC {ndc:'13811059830'})-[*1..3]-(i:IN)) where i.brand is not null RETURN path
+MATCH path=((n:NDC {ndc:'00045016762'})-[*1..3]-(i:IN)) where i.brand is not null RETURN path
+
+# Bring in other drugs related to the main ingredient tradename
+MATCH (n:NDC {ndc:'13811059830'})-[*1..2]-(i:IN)-[:has_tradename]-(t) with n,i,t MATCH path=((t)-[*1..3]-(n2:NDC)) RETURN path limit 200;
+MATCH (n:NDC {ndc:'00045016762'})-[*1..2]-(i:IN)-[:has_tradename]-(t) with n,i,t MATCH path=((t)-[*1..3]-(n2:NDC)) RETURN path limit 200;

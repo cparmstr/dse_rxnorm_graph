@@ -123,6 +123,7 @@ def create_ndc_nodes_and_relationships(sat: pd.DataFrame) -> List[Path]:
     rxcui = "rxcui"
     rxaui = "rxaui"
     col_check_list = [ndc, rxcui, rxaui]
+    breakpoint()
 
     ndc_data = (
         sat[(sat["atn"] == "NDC") & (sat["suppress"] == "N") & (sat["sab"] == "RXNORM")]
@@ -141,22 +142,15 @@ def create_ndc_nodes_and_relationships(sat: pd.DataFrame) -> List[Path]:
         node_label=ndc,
     )
 
-    # ndc_node_path = Path("ndc_rxcui_nodes.csv")
-    # node_path = graph.save_node_csv_file(
-    #     ndc_data[[rxcui, rxaui]].rename(
-    #         columns={rxcui: f"{rxcui}:ID({rxcui.upper()})"}
-    #     ),
-    #     filename=ndc_node_path,
-    #     node_label=rxcui,
-    # )
-
     if node_path.exists() and node_path == ndc_node_path:
         files_written.append(ndc_node_path)
 
     ndc_relationships_path = Path("ndc_cui_relations.csv")
 
     saved_path = graph.save_relationship_csv_file(
-        ndc_data[[ndc, rxaui, rxcui]],
+        ndc_data.loc[
+            ndc_data["sab"] == "RXNORM", [ndc, rxaui, rxcui]
+        ].drop_duplicates(),
         filename=ndc_relationships_path,
         start_col=ndc,
         start_label="NDC",
@@ -282,8 +276,8 @@ def main(
     sat = read_and_feather_rxnorm_data(sat_filepath)
     conso = read_and_feather_rxnorm_data(conso_filepath)
 
-    rel = rxnorm_only(rel)
-    sat = rxnorm_only(sat)
+    # rel = rxnorm_only(rel)
+    # sat = rxnorm_only(sat)
 
     rela_types = ["consists_of", "has_ingredient", "contains", "has_tradename"]
     relationship_maps = {}

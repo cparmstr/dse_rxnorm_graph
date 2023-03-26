@@ -223,11 +223,13 @@ def save_relationship_csv_file(
         return filename
 
 
-def _standardize_ndc_11(ndc: str) -> str:
+def _standardize_ndc_11(ndc_orig: str) -> str:
     """
     # NDC must match a "5-4-2" pattern ie '[0-9]{5}-[0-9]{4}-[0-9]{2}' pattern to be valid
     # Common formats are 6-4-1, 6-3-2, 5-3-2, etc.
     """
+    # Be sure to not replace '-'
+    ndc = re.sub(r"[_+\(\)* ]", "", ndc_orig)
     if "-" in ndc:
         digit_strings = ndc.split("-")
         valid = [5, 4, 2]
@@ -242,7 +244,7 @@ def _standardize_ndc_11(ndc: str) -> str:
                 digit_str = digit_str[1:]
 
         ndc = "".join(digit_strings)
-    return re.sub(r"[-_+\(\) ]", "", ndc).zfill(11)[-11:]
+    return ndc.replace("-", "").zfill(11)[-11:]
 
 
 def _standardize_node_label_list(labels: List) -> List:

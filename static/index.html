@@ -18,20 +18,21 @@ https://github.com/neo4j-examples/movies-python-bolt
     <div class="container">
         <div class="row">
             <div class="col-sm-6 col-md-6">
-                <div class="brand">DSE 241 - Final Project</div>
+                <div class="brand"><b>DSE 241 - Final Project</b></div>
                 <ul class="nav navbar-nav">
                     <li>
                         <form role="search" class="navbar-form" id="search">
                             <div class="form-group">
-                                <input type="text" value="01184501258" placeholder="Search for NDC Value" class="form-control" name="search">
+                                <input type="text" value="01182206861" placeholder="Search for NDC Value" class="form-control" name="search" id="ndc_search">
                             </div>
-                            <button class="btn btn-default" type="submit">Search</button>
+                            <button class="btn btn-default" type="submit">NDC Search</button>
                         </form>
                     </li>
                 </ul>
             </div>
             <div class="navbar-header col-sm-6 col-md-6">
                 <div class="navbar-brand">
+                    <img src="https://encuentratubeca.mx/wp-content/uploads/2021/05/Encuentra-tu-beca-estudia-en-la-Universidad-de-California-en-San-Diego-UCSD-1536x580.jpg" width=200 height=75/>
                 </div>
             </div>
         </div>
@@ -69,8 +70,8 @@ https://github.com/neo4j-examples/movies-python-bolt
 </div>
 <style type="text/css">
     .node { stroke: #222; stroke-width: 1.5px; }
-    .node.IN { fill: #888; }
-    .node.NDC { fill: #BBB; }
+    .node.IN { fill: #44F; }
+    .node.NDC { fill: #F66; }
     .link { stroke: #999; stroke-opacity: .6; stroke-width: 1px; }
 </style>
 
@@ -79,6 +80,7 @@ https://github.com/neo4j-examples/movies-python-bolt
 <script type="text/javascript">
     $(function () {
         function showIngredient(ndc) {
+            document.getElementById("ndc_search").value = ndc;
             $.get("/ingredients/" + encodeURIComponent(ndc),
                     function (data) {
                         if (!data) return;
@@ -118,19 +120,52 @@ https://github.com/neo4j-examples/movies-python-bolt
 </script>
 
 <script type="text/javascript">
-    const width = 800, height = 800;
+    const width = 1860, height = 700;
+    const margin = {top: 300, right: 30, bottom: 10, left: 100};
 
     const force = d3.layout.force()
-            .charge(-200).linkDistance(30).size([width, height]);
+            .charge(-150).linkDistance(70).size([width, height]);
 
     const svg = d3.select("#graph").append("svg")
-            .attr("width", "100%").attr("height", "100%")
-            .attr("pointer-events", "all");
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .attr("pointer-events", "all")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    
 
     d3.json("/graph", function(error, graph) {
 		if (error) return;
 
-        force.nodes(graph.nodes).links(graph.links).start();
+        function handleMouseOver(d, i) {  // Add interactivity
+            // Use D3 to select element, change color and size
+            if (!d.rxcui) return false;
+            d3.select(this).attr({
+              r: 30,
+            });
+
+            // Specify where to put label of text
+            svg.append("text").attr({
+               id: "t" + d.rxcui + "-" + i,  // Create an id for text so we can select it later for removing on mouseout
+                x: d.x - 50,
+                y: d.y + 50,
+                fill: "#111"
+            })
+            .text(function() {
+              return d.name;  // Value of the text
+            });
+          }
+
+          function handleMouseOut(d, i) {
+            // Use D3 to select element, change color back to normal
+            d3.select(this).attr({
+              fill: '#CCF',
+              r: 12 + 3 * d.icount
+            });
+
+            // Select text by id and then remove
+            d3.select("#t" + d.rxcui+ "-" + i).remove();  // Remove text location
+          }        force.nodes(graph.nodes).links(graph.links).start();
 
         const link = svg.selectAll(".link")
                 .data(graph.links).enter()
@@ -140,9 +175,13 @@ https://github.com/neo4j-examples/movies-python-bolt
                 .data(graph.nodes).enter()
                 .append("circle")
                 .attr("class", function (d) { return "node "+d.label })
-                .attr("r", 10)
+                .attr("r", function (d) { return 12 + (3*d.icount) })
+                .on("mouseover", handleMouseOver)
+                .on("mouseout", handleMouseOut)
                 .on("click", 
                     function (d) {
+                        document.getElementById("ndc_search").value = d.ndc;
+                        console.log(d);
                         if (!d.ndc) return false;
                         $.get("/ingredients/" + d.ndc,
                                 function (data) {
@@ -168,9 +207,11 @@ https://github.com/neo4j-examples/movies-python-bolt
                 .call(force.drag);
 
         node.append("name")
-                .text(function (d) { return d.brand; })
-        node.append("ndc")
-                .text(function (d) { return d.ndc; })
+                .text(function (d) { return d.brand; });
+        node.append("text")
+                .attr("dx", 12)
+                .style("font-size", "160%")
+                .text(function (d) { return d.ndc; });
 
         force.on("tick", function() {
             link.attr("x1", function(d) { return d.source.x; })
@@ -181,6 +222,7 @@ https://github.com/neo4j-examples/movies-python-bolt
             node.attr("cx", function(d) { return d.x; })
                     .attr("cy", function(d) { return d.y; });
         });
+
     });
 </script>
 </body>

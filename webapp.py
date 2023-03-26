@@ -72,7 +72,7 @@ def get_ingredients(ndc):
     def work(tx, ndc_):
         return list(
             tx.run(
-                "MATCH (n:NDC {ndc:$ndc})-[*1..4]-(i:IN)"
+                "MATCH (n:NDC {ndc:$ndc})-[*1..3]-(i:IN)"
                 "WHERE i.brand IS NOT NULL "
                 "RETURN COLLECT(DISTINCT i.brand) as ingredients",
                 {"ndc": ndc_},
@@ -93,25 +93,37 @@ def get_graph():
     def work(tx, limit):
         return list(
             tx.run(
-                "MATCH (n:NDC)-[:aka]-(v)-[:has_ingredient]-(i:IN) "
-                "WHERE n.brand IS NOT NULL and i.brand IS NOT NULL "
-                "RETURN n.ndc as ndc, n.brand as brand, collect(i.brand) as ingredients "
+                "MATCH (n:NDC)-[:aka]-(v)-[*1..2]-(i:IN) "
+                "WHERE n.brand IS NOT NULL and i.brand IS NOT NULL AND v.brand IS NOT NULL "
+                "RETURN n.ndc as ndc, n.brand as brand, n.rxcui as rxcui, collect(DISTINCT i) as ingredients "
                 "LIMIT $limit ",
                 {"limit": limit},
             )
         )
 
     db = get_db()
-    results = db.execute_read(work, request.args.get("limit", 100))
+    results = db.execute_read(work, request.args.get("limit", 700))
     nodes = []
     rels = []
     i = 0
     for record in results:
-        nodes.append({"ndc": record["ndc"], "name": record["brand"], "label": "NDC"})
+        node_data = {
+            "ndc": record["ndc"],
+            "name": record["brand"],
+            "label": "NDC",
+            "rxcui": record["rxcui"],
+            "icount": len(record["ingredients"]),
+        }
+        nodes.append(node_data)
         target = i
         i += 1
-        for name in record["ingredients"]:
-            ingredient = {"name": name, "label": "IN"}
+        for ingredient in record["ingredients"]:
+            ingredient = {
+                "name": ingredient["brand"],
+                "label": "IN",
+                "rxcui": ingredient["rxcui"],
+                "icount": 0,
+            }
             try:
                 source = nodes.index(ingredient)
             except ValueError:

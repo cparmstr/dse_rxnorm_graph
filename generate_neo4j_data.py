@@ -125,7 +125,7 @@ def create_ndc_nodes_and_relationships(sat: pd.DataFrame) -> List[Path]:
     col_check_list = [ndc, rxcui, rxaui]
 
     ndc_data = (
-        sat[(sat["atn"] == "NDC") & (sat["suppress"] == "N")]
+        sat[(sat["atn"] == "NDC") & (sat["suppress"] == "N") & (sat["sab"] == "RXNORM")]
         .rename(columns={"atv": ndc})
         .drop_duplicates(subset=ndc)
     )
@@ -176,86 +176,18 @@ def create_ndc_nodes_and_relationships(sat: pd.DataFrame) -> List[Path]:
 
 def create_relationship_map(rel, rela_type) -> pd.DataFrame:
     relation_cols = ["rxcui1", "rxaui1", "rxcui2", "rxaui2", "rela"]
-    return rel[(rel["rela"] == rela_type) & (rel["sab"] == "RXNORM")][
-        relation_cols
-    ].rename(columns={"rela": ":TYPE"})
+    rel_map = (
+        rel[(rel["rela"] == rela_type)][relation_cols]
+        .rename(columns={"rela": ":TYPE"})
+        .copy()
+    )
+    logger.info(
+        f"Created relationship map data for {rela_type} with {len(rel_map)} records"
+    )
+    return rel_map
 
 
-def main(
-    conso_filepath: Optional[Path] = None,
-    rel_filepath: Optional[Path] = None,
-    sat_filepath: Optional[Path] = None,
-    skip: Optional[Path] = None,
-    focus: Optional[Path] = None,
-):
-    """
-    Main function that orchestrates filling the Neo4j DB with data from RxNorm files. If
-
-    Args:
-        conso_filepath  Location for the RXCONSO.RRF(.gz) file
-    """
-    conso_filepath = Path("../") / "rrf" / "RXNCONSO.RRF.gz"
-    rel_filepath = Path("../") / "rrf" / "RXNREL.RRF.gz"
-    sat_filepath = Path("../") / "rrf" / "RXNSAT.RRF.gz"
-    sty_filepath = Path("../") / "rrf" / "RXNSTY.RRF.gz"
-
-    if not (
-        conso_filepath.exists() and rel_filepath.exists() and sat_filepath.exists()
-    ):
-        raise ValueError("Missing RRF file(s).")
-
-    neo_rrf = get_neo_rrf()
-
-    sty_feather_path = sty_filepath.with_suffix(".feather")
-    if sty_feather_path.exists():
-        sty = rrf.standardize_columns(pd.read_feather(sty_feather_path))
-    else:
-        sty = rrf.read_rrf_sty(filepath=sty_filepath)
-        sty.to_feather(sty_feather_path)
-
-    conso_feather_path = conso_filepath.with_suffix(".feather")
-    if conso_feather_path.exists():
-        conso = rrf.standardize_columns(pd.read_feather(conso_feather_path))
-    else:
-        conso = rrf.read_rrf_conso(filepath=conso_filepath)
-        conso.to_feather(conso_feather_path)
-
-    rel_feather_path = rel_filepath.with_suffix(".feather")
-    if rel_feather_path.exists():
-        rel = rrf.standardize_columns(pd.read_feather(rel_feather_path))
-    else:
-        rel = rrf.read_rrf_rel(filepath=rel_filepath)
-        rel.to_feather(rel_feather_path)
-
-    sat_feather_path = sat_filepath.with_suffix(".feather")
-    if sat_feather_path.exists():
-        sat = rrf.standardize_columns(pd.read_feather(sat_feather_path))
-    else:
-        sat = rrf.read_rrf_sat(filepath=sat_filepath)
-        sat.to_feather(sat_feather_path)
-
-    rela_type = "consists_of"
-    consists_map = create_relationship_map(rel, rela_type=rela_type)
-    relationship_maps = [(consists_map, rela_type)]
-    rela_type = "has_ingredient"
-    ingredient_map = create_relationship_map(rel, rela_type=rela_type)
-    relationship_maps.append((ingredient_map, rela_type))
-
-    rela_type = "contains"
-    contains_map = create_relationship_map(rel, rela_type=rela_type)
-    relationship_maps.append((contains_map, rela_type))
-
-    rela_type = "has_tradename"
-    tradename_map = create_relationship_map(rel, rela_type=rela_type)
-    relationship_maps.append((tradename_map, rela_type))
-
-    logger.info("Relationship mapping data created")
-
-    # Bring ingredients and other types together based on brand vs generic
-    # This makes it possible to track all generic meds while including related brand names as "the same"
-    # while also keeping track of branded meds that have no generic alternative
-    scd = group_nodes_by_tty(conso, tty_type="IN", semantic_type="SCD", group="Generic")
-
+def process_generic_meds(scd, tradename_map, concept_brands):
     # Using left join since not all generic meds will have a brand name
     generic_meds = (
         scd.rename(columns={"str": "generic"})
@@ -266,7 +198,7 @@ def main(
             how="left",
         )
         .merge(
-            conso.rename(columns={"str": "brand"})[["rxcui", "brand"]],
+            concept_brands,
             left_on="rxcui1",
             right_on="rxcui",
             how="left",
@@ -274,20 +206,106 @@ def main(
         )
     )
 
-    logger.info("Generic meds data processed")
-    # Seems like some brand name meds do not have a generic alternative. Need to keep those separately.
-    sbd = group_nodes_by_tty(conso, tty_type="BN", semantic_type="SBD", group="brand")
-    sbd_filter = (
-        ~sbd["rxcui"].isin(generic_meds["rxcui1"])
-        & ~sbd["rxcui"].isin(scd["rxcui"])
-        & ~sbd["rxcui"].isin(generic_meds["rxcui"])
+    # Fill in blank names
+    noname = generic_meds["brand"].isna()
+    generic_meds.loc[noname, "brand"] = generic_meds.loc[noname, "generic"]
+
+    # Remove duplicate RXCUI
+    original_len = len(generic_meds)
+    generic_dedupe = generic_meds.drop_duplicates(subset=["rxcui", "rxcui_BN"])
+    generic_dupes = generic_dedupe.duplicated(subset="rxcui")
+    generic_dedupe.loc[generic_dupes, "rxcui"] = generic_dedupe.loc[
+        generic_dupes, "rxcui_BN"
+    ]
+    final_len = len(generic_dedupe)
+    logger.warning(
+        f"Dropped {original_len - final_len} records from the SCD data, still have {final_len} records."
     )
-    sbd_unique = sbd.loc[sbd_filter]
+
+    logger.info("Generic meds data processed")
+    return generic_dedupe
+
+
+def read_and_feather_rxnorm_data(filepath, create_feather=True):
+    """
+    Goal is to read data from files saved locally.
+    Uses feather files if they exist.
+    Creates them if not and create_feather flag is set.
+    """
+    feather_path = filepath.with_suffix(".feather")
+    if feather_path.exists():
+        rxnorm_data = rrf.standardize_columns(pd.read_feather(feather_path))
+    else:
+        rxnorm_data = rrf.read_rrf_sty(filepath=filepath)
+        if create_feather:
+            rxnorm_data.to_feather(feather_path)
+    return rxnorm_data
+
+
+def rxnorm_only(rx_df):
+    rx_filter = rx_df["sab"] == "RXNORM"
+    logger.info(
+        "Keeping only RXNORM values: "
+        f"removed {sum(~rx_filter)} rows, "
+        f"kept {sum(rx_filter)} records"
+    )
+    return rx_df[rx_filter]
+
+
+def main(
+    conso_filepath: Optional[Path] = None,
+    rel_filepath: Optional[Path] = None,
+    sat_filepath: Optional[Path] = None,
+    skip: Optional[Path] = None,
+    focus: Optional[Path] = None,
+):
+    """
+    Main function that orchestrates filling the Neo4j DB with data from RxNorm files.
+
+    Args:
+        conso_filepath  Location for the RXCONSO.RRF(.gz) file
+    """
+    conso_filepath = Path("./") / "rrf" / "RXNCONSO.RRF.gz"
+    rel_filepath = Path("./") / "rrf" / "RXNREL.RRF.gz"
+    sat_filepath = Path("./") / "rrf" / "RXNSAT.RRF.gz"
+    sty_filepath = Path("./") / "rrf" / "RXNSTY.RRF.gz"
+
+    if not (
+        conso_filepath.exists() and rel_filepath.exists() and sat_filepath.exists()
+    ):
+        raise ValueError("Missing RRF file(s).")
+
+    neo_rrf = get_neo_rrf()
+
+    sty = read_and_feather_rxnorm_data(sty_filepath)
+    rel = read_and_feather_rxnorm_data(rel_filepath)
+    sat = read_and_feather_rxnorm_data(sat_filepath)
+    conso = read_and_feather_rxnorm_data(conso_filepath)
+
+    rel = rxnorm_only(rel)
+    sat = rxnorm_only(sat)
+
+    rela_types = ["consists_of", "has_ingredient", "contains", "has_tradename"]
+    relationship_maps = {}
+    for rela_type in rela_types:
+        rela_map = create_relationship_map(rel, rela_type=rela_type)
+        relationship_maps[rela_type] = rela_map
+    logger.info("Relationship mapping data created")
+
+    # Bring ingredients and other types together based on brand vs generic
+    # This makes it possible to track all generic meds while including related brand names as "the same"
+    # while also keeping track of branded meds that have no generic alternative
+    scd = group_nodes_by_tty(conso, tty_type="IN", semantic_type="SCD", group="generic")
+
+    concept_brands = conso.rename(columns={"str": "brand"})[
+        ["rxcui", "brand"]
+    ].drop_duplicates(subset="rxcui")
+    generic_meds = process_generic_meds(
+        scd, relationship_maps["has_tradename"], concept_brands
+    )
 
     sat = sat.merge(
-        conso.rename(columns={"str": "brand"})[["rxcui", "brand"]].drop_duplicates(
-            subset="rxcui"
-        ),
+        concept_brands,
         on="rxcui",
         how="left",
         suffixes=("", "_BN"),
@@ -303,27 +321,38 @@ def main(
     create_rxcui_nodes(neo_rrf, generic_meds)
     logger.info("RXCUI TTY nodes and relationships data ready")
 
-    logger.warning("No brand name file being made! It was causing duplicates.")
-    # create_rxcui_nodes(neo_rrf, sbd_unique)
+    # Seems like some brand name meds do not have a generic alternative. Need to keep those separately.
+    sbd = group_nodes_by_tty(conso, tty_type="BN", semantic_type="SBD", group="brand")
+    sbd_filter = (
+        ~sbd["rxcui"].isin(generic_meds["rxcui"])
+        # & ~sbd["rxcui"].isin(generic_meds["rxcui1"])
+        # & ~sbd["rxcui"].isin(scd["rxcui"])
+        & (sbd["sab"] == "RXNORM")
+    )
+    sbd_unique = sbd.loc[sbd_filter]
 
-    for mapping, rela_type in relationship_maps:
-        mapping_filter1 = mapping["rxcui1"].isin(generic_meds["rxcui"]) | mapping[
+    logger.warning("No brand name file being made! It was causing duplicates.")
+    create_rxcui_nodes(neo_rrf, sbd_unique)
+
+    for rela_type, rel_map in relationship_maps.items():
+        mapping_filter1 = rel_map["rxcui1"].isin(generic_meds["rxcui"]) | rel_map[
             "rxcui1"
         ].isin(sbd_unique["rxcui"])
-        mapping_filter2 = mapping["rxcui2"].isin(generic_meds["rxcui"]) | mapping[
+        mapping_filter2 = rel_map["rxcui2"].isin(generic_meds["rxcui"]) | rel_map[
             "rxcui2"
-        ].isin(sbd_unique["rxcui"])
-        mapping_diff = (~mapping_filter1) | (~mapping_filter2)
+        ].isin(generic_meds["rxcui"])
+        mapping_diff = (~mapping_filter1) & (~mapping_filter2)
         if any(mapping_diff):
             logger.warning(
                 f"Missing {mapping_diff.sum()} record matches for {rela_type}"
             )
         graph.save_relationship_csv_file(
-            mapping.loc[mapping_filter1 & mapping_filter2, :],
+            rel_map.loc[~mapping_diff, :],
             filename=Path(f"rel_{rela_type}.csv"),
             start_col="rxcui2",
             end_col="rxcui1",
         )
+    breakpoint()
 
 
 def group_nodes_by_tty(node_df, tty_type, semantic_type, group):

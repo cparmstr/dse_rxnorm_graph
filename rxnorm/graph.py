@@ -29,41 +29,11 @@ class NeoRRF:
                 # raise neo4j.exceptions.DatabaseUnavailable(
                 #     "Could not connect to the DB."
                 # ) from de
-                echo "Not connected to DB"
-                pass
+                logger.info("Not connected to DB")
 
     def close(self):
         # Don't forget to close the driver connection when you are finished with it
         self.driver.close()
-
-    #  def merge_rel_connections(self, nodes_df, db_name="neo4j"):
-    #      """
-    #      Thread safe. Creates a session and uses Neo4j MERGE to create nodes for RXCUI
-    #      that are related to RXREL RXAUI values.
-    #      """
-    #      with self.driver.session(database=db_name) as session:
-    #          for _, node in nodes_df.iterrows():
-    #              node_type = "rxcui"
-    #              if not node["rxcui1"]:
-    #                  node_type = "rxaui"
-    #              n1 = f"{node_type}1"
-    #              n2 = f"{node_type}2"
-
-    #              query_n1 = f'(n1: RXCUI {{ {node_type.lower()}:"{node[n1]}" }})'
-    #              query_n2 = f'(n2: RXCUI {{ {node_type.lower()}:"{node[n2]}" }})'
-    #              query_r = node["rela"]
-    #              query = (
-    #                  f"MATCH {query_n1} "
-    #                  f"MATCH {query_n2} "
-    #                  "WITH n1, n2 "
-    #                  f"WHERE not (n2)-[]->(n1) "
-    #                  f"MERGE (n1)-[:{query_r}]->(n2)"
-    #              )
-    #              session.execute_write(
-    #                  lambda tx: tx.run(
-    #                      query,
-    #                  )
-    #              )
 
     def create_conso_nodes_by_tty(
         self, node_df, out_dir=Path("./neo4j_import"), compress=False
@@ -78,7 +48,13 @@ class NeoRRF:
         for label in node_lower["tty"].unique():
             nodes_by_label = node_lower[node_lower["tty"] == label]
             # Order of the labels matters. First one is the ID
-            escaped_label = self._standardize_node_label_list([rxcui, rxaui, label])
+            escaped_label = _standardize_node_label_list(
+                [
+                    rxcui,
+                    rxaui,
+                    label,
+                ]
+            )
             if "str" in nodes_by_label.columns:
                 nodes_by_label = nodes_by_label.rename(columns={"str": "name"})
 
@@ -87,55 +63,14 @@ class NeoRRF:
                 nodes_by_label, nodes_filename, id_col=rxcui, node_label=escaped_label
             )
 
-    # def merge_ndc_cui_relationship(self, node_df, relation, db_name="neo4j"):
-    #     """
-    #     Thread safe. Creates a session and uses Neo4j MERGE to create nodes for NDC nodes
-    #     that are related to RxCUI values.
-    #     """
-    #     ndc = "ndc"
-    #     rxcui = "rxcui"
-    #     rxaui = "rxaui"
-    #     with self.driver.session(database=db_name) as session:
-    #         for idx, node in node_df.iterrows():
-    #             node1 = {
-    #                 "labels": [ndc],
-    #                 "properties": {
-    #                     "ndc": node[ndc],
-    #                 },
-    #             }
-    #             node2 = {
-    #                 "labels": [rxcui],
-    #                 "properties": {
-    #                     "rxcui": node[rxcui],
-    #                     rxaui.lower(): node[rxaui],
-    #                 },
-    #             }
-    #             self._merge_and_return_relationship_single(
-    #                 session, node1, node2, relation
-    #             )
-
-    @staticmethod
-    def _standardize_ndc_11(ndc: str) -> str:
-        return re.sub(r"[-_+\(\) ]", "", ndc).zfill(11)
-
-    @staticmethod
-    def _standardize_node_label_list(labels: List) -> List:
-        return [
-            label.upper().replace("\\u0060", "`").replace("`", "``") for label in labels
-        ]
-
-    @staticmethod
-    def _standardize_rel_label(labels: List) -> List:
-        return [label.lower() for label in labels]
-
     def _set_up_path_merge_queries(self, node1, node2, relation):
         """
         Creates the parametrized query for Cypher
         """
         labels = "labels"
         properties = "properties"
-        node1_label = self._standardize_node_label(node1[labels])
-        node2_label = self._standardize_node_label(node2[labels])
+        node1_label = _standardize_node_label(node1[labels])
+        node2_label = _standardize_node_label(node2[labels])
 
         if not isinstance(node1[properties], dict) or not isinstance(
             node2[properties], dict
@@ -289,7 +224,25 @@ def save_relationship_csv_file(
 
 
 def _standardize_ndc_11(ndc: str) -> str:
-    return re.sub(r"[-_+\(\) ]", "", ndc).zfill(11)[:11]
+    """
+    # NDC must match a "5-4-2" pattern ie '[0-9]{5}-[0-9]{4}-[0-9]{2}' pattern to be valid
+    # Common formats are 6-4-1, 6-3-2, 5-3-2, etc.
+    """
+    if "-" in ndc:
+        digit_strings = ndc.split("-")
+        valid = [5, 4, 2]
+        for idx, digit_str in enumerate(digit_strings):
+            ds_len = len(digit_str)
+            v_len = valid[idx]
+            if ds_len == v_len:
+                continue
+            elif ds_len < v_len:
+                digit_strings[idx] = "0" + digit_str
+            else:
+                digit_str = digit_str[1:]
+
+        ndc = "".join(digit_strings)
+    return re.sub(r"[-_+\(\) ]", "", ndc).zfill(11)[-11:]
 
 
 def _standardize_node_label_list(labels: List) -> List:
@@ -301,3 +254,10 @@ def _standardize_node_label_list(labels: List) -> List:
 def _standardize_rel_label(df: pd.DataFrame) -> None:
     for col_name in df.columns:
         df.rename(columns={col_name: col_name.lower().strip().replace("`", "``")})
+
+
+@staticmethod
+def _standardize_node_label_list(labels: List) -> List:
+    return [
+        label.upper().replace("\\u0060", "`").replace("`", "``") for label in labels
+    ]
